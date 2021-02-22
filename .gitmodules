@@ -1,0 +1,3 @@
+[submodule "libs/behavior_tree"]
+	path = libs/behavior_tree
+	url = https://github.com/Sojourn/behavior_tree
