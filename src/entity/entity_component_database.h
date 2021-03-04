@@ -52,7 +52,7 @@ namespace entler {
                 template<ComponentTypeId component_type_id>
                 Component<component_type_id>& get_component() {
                     assert(!removed_);
-                    assert(0 <= entity_offset_ && entity_offset_ < entity_count_);
+                    assert((0 <= entity_offset_) && (entity_offset_ < entity_count_));
 
                     static constexpr int component_type_index = find_component_type<component_type_ids...>(component_type_id);
                     static_assert(component_type_index >= 0, "Unknown component");
@@ -62,17 +62,19 @@ namespace entler {
 
                 std::tuple<Component<component_type_ids>&...> get_components() {
                     assert(!removed_);
-                    assert(0 <= entity_offset_ && entity_offset_ < entity_count_);
+                    assert((0 <= entity_offset_) && (entity_offset_ < entity_count_));
 
                     return make_tuple<component_type_ids...>();
                 }
 
                 void remove() {
                     assert(!removed_);
-                    assert(0 <= entity_offset_ && entity_offset_ < entity_count_);
+                    assert((0 <= entity_offset_) && (entity_offset_ < entity_count_));
 
                     Entity& entity = database_.entity_table_[entity_offset_];
                     entity.tombstone = 1;
+
+                    removed_ = true;
                 }
 
             private:
@@ -85,12 +87,13 @@ namespace entler {
                         return std::tuple_cat(component_tuple, make_tuple<tup_component_type_ids...>());
                     }
                     else {
-                        return component_tuple;
+                        return component_tuple; // base case
                     }
                 }
 
             private:
                 bool advance() {
+                    // note that entity_offset_ may be temporarily greater than entity_count_
                     while (++entity_offset_ < entity_count_) {
                         const Entity& entity = database_.entity_table_[entity_offset_];
 
