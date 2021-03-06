@@ -14,9 +14,6 @@ namespace entler {
     using EntityId = int64_t;
 
     template<typename Schema>
-    class Entity;
-
-    template<typename Schema>
     class EntityDatabase;
 
     template<typename Schema>
