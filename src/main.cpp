@@ -3,65 +3,59 @@
 #include "memory/allocator.h"
 #include "behavior_tree/behavior_tree.h"
 #include "behavior_tree/nodes/sequence_node.h"
-#include "entity/entity_component_database.h"
+#include "entity/entity_database.h"
 
 using namespace entler;
 
-namespace Components {
-    enum : uint32_t {
-        transform,
-        body,
-        sprite,
-        behavior,
-    };
-}
+enum class ComponentType {
+    transform,
+    sprite,
+    behavior,
+};
 
 template<>
-struct Component<Components::transform> {
-    int x = 0;
-    int y = 0;
+class Component<ComponentType, ComponentType::transform> {
+public:
+    int x;
+    int y;
+    int z;
 };
-using TransformComponent = Component<Components::transform>;
 
 template<>
-struct Component<Components::body> {
+class Component<ComponentType, ComponentType::sprite> {
+public:
+    int sprite_id;
 };
-using BodyComponent = Component<Components::body>;
 
 template<>
-struct Component<Components::sprite> {
+class Component<ComponentType, ComponentType::behavior> {
+public:
 };
-using SpriteComponent = Component<Components::sprite>;
 
-template<>
-struct Component<Components::behavior> {
-};
-using BehaviorComponent = Component<Components::behavior>;
+using TransformComponent = Component<ComponentType, ComponentType::transform>;
+using SpriteComponent = Component<ComponentType, ComponentType::sprite>;
+using BehaviorComponent = Component<ComponentType, ComponentType::behavior>;
 
 int main(int argc, char** argv) {
-    entler::EntityComponentDatabase<Components::transform, Components::sprite, Components::behavior> edb;
-    edb.add_entity(
+    EntityDatabase<EntitySchema<ComponentType, ComponentType::transform, ComponentType::sprite, ComponentType::behavior>> db;
+
+    auto entity = db.add_entity(
         TransformComponent {
-            .x = 1,
-            .y = 13,
+            1, 2, 3
         },
         SpriteComponent {
-        },
-        BehaviorComponent {
+            1337
         }
     );
 
-    auto result = edb.query<Components::transform, Components::behavior>();
-    while (auto record = result.next()) {
-        auto&& [transform, behavior] = record->get_components();
-        std::cout << transform.x << ", " << transform.y << std::endl;
-        record->remove();
-    }
-    while (auto record = result.next()) {
-        auto&& [transform, behavior] = record->get_components();
-        std::cout << transform.x << ", " << transform.y << std::endl;
-        record->remove();
-    }
+    TransformComponent& transform = entity.get_component<ComponentType::transform>();
+    std::cout << transform.x << std::endl;
+    std::cout << transform.y << std::endl;
+    std::cout << transform.z << std::endl;
+
+    db.for_each_entity({ComponentType::behavior}, [&](auto& entity) {
+        std::cout << entity.get_id() << std::endl;
+    });
 
     return 0;
 }
