@@ -7,6 +7,7 @@
 #include <cstring>
 #include <cstdint>
 #include <cassert>
+#include "util/intrusive_list.h"
 #include "entity_schema.h"
 
 namespace entler {
@@ -19,6 +20,7 @@ namespace entler {
     template<typename Schema>
     class Entity {
         template<typename> friend class EntityDatabase;
+        template<typename> friend class EntityHandle;
         using Database = EntityDatabase<Schema>;
 
     public:
@@ -48,8 +50,47 @@ namespace entler {
     };
 
     template<typename Schema>
+    class EntityHandle {
+    public:
+        EntityHandle() = default;
+        EntityHandle(Entity<Schema>& entity);
+
+        explicit operator bool() const {
+            return handle_list_node_.is_linked();
+        }
+
+        Entity<Schema> get();
+        Entity<Schema> operator*();
+
+        void reset();
+
+    private:
+        void update_entity_index(size_t entity_index);
+
+        EntityDatabase<Schema>* entity_database_   = nullptr;
+        size_t                  entity_index_      = 0;
+        IntrusiveListNode       handle_list_node_;
+    };
+
+    template<typename Schema>
+    class EntityObserver {
+    public:
+        EntityObserver(EntityDatabase<Schema>& entity_database);
+
+        virtual void entity_added(Entity<Schema> entity) = 0;
+        virtual void entity_removed(Entity<Schema> entity) = 0;
+
+    protected:
+        ~EntityObserver();
+
+    private:
+        EntityDatabase<Schema>& entity_database_;
+    };
+
+    template<typename Schema>
     class EntityDatabase {
         template<typename> friend class Entity;
+        template<typename> friend class EntityHandle;
 
     public:
         using ComponentType = typename Schema::ComponentType;
@@ -132,16 +173,21 @@ namespace entler {
             }
         }
 
-        void vacuum();
+        void vacuum() {
+            // TODO
+        }
 
     private:
         using ComponentTables = typename Schema::ComponentTables;
 
+        using EntityHandleList = IntrusiveList<EntityHandle<Schema>, &EntityHandle<Schema>::handle_list_node_>;
+
         // TODO: rename this to something else
         struct EntityRecord {
-            EntityId      entity_id;
-            ComponentMask component_mask;
-            size_t        component_indexes[Schema::component_type_count()];
+            EntityId         entity_id;
+            ComponentMask    component_mask;
+            size_t           component_indexes[Schema::component_type_count()];
+            EntityHandleList handles;
 
             EntityRecord(EntityId entity_id)
                 : entity_id(entity_id)
@@ -149,6 +195,27 @@ namespace entler {
                 memset(component_indexes, 0, sizeof(component_indexes));
             }
         };
+
+        void add_entity_observer(EntityObserver<Schema>& observer) {
+            entity_observers_.push_back(&observer);
+        }
+
+        void remove_entity_observer(EntityObserver<Schema>& observer) {
+            if (auto it = std::find(entity_observers_.begin(), entity_observers_.end(), &observer); it != entity_observers_.end()) {
+                entity_observers_.erase(it);
+            }
+        }
+
+        EntityRecord& get_entity_record(size_t entity_index) {
+            assert(entity_index < entity_table_.size());
+            return entity_table_[entity_index];
+        }
+
+        void update_entity_index(size_t entity_index) {
+            for (auto& handle: get_entity_record(entity_index).handles) {
+                handle.update_entity_index(entity_index);
+            }
+        }
 
         template<ComponentType component_type>
         void add_component(EntityRecord& record, Component<component_type> component) {
@@ -178,9 +245,10 @@ namespace entler {
         }
 
     private:
-        EntityId                  next_entity_id_;
-        std::vector<EntityRecord> entity_table_;
-        ComponentTables           component_tables_;
+        EntityId                            next_entity_id_;
+        std::vector<EntityRecord>           entity_table_;
+        ComponentTables                     component_tables_;
+        std::vector<EntityObserver<Schema>> entity_observers_;
     };
 
     template<typename Schema>
@@ -209,5 +277,52 @@ namespace entler {
         size_t component_index = record.component_indexes[*component_type_index];
         return std::get<*component_type_index>(database_.component_tables_)[component_index];
     }
+
+    template<typename Schema>
+    EntityHandle<Schema>::EntityHandle(Entity<Schema>& entity)
+        : entity_database_(entity.database_)
+        , entity_index_(entity.entity_index_)
+    {
+        auto& record = entity_database_->get_entity_record(entity_index_);
+        record.handles.push_back(*this);
+    }
+
+    template<typename Schema>
+    Entity<Schema> EntityHandle<Schema>::get() {
+        assert(*this);
+        return Entity<Schema>(entity_database_, entity_index_);
+    }
+
+    template<typename Schema>
+    Entity<Schema> EntityHandle<Schema>::operator*() {
+        return get();
+    }
+
+    template<typename Schema>
+    void EntityHandle<Schema>::reset() {
+        if (*this) {
+            entity_database_ = nullptr;
+            entity_offset_ = 0;
+            handle_list_node_.unlink();
+        }
+    }
+
+    template<typename Schema>
+    void EntityHandle<Schema>::update_entity_index(size_t entity_index) {
+        assert(*this);
+        entity_index_ = entity_index;
+    }
+
+    template<typename Schema>
+    EntityObserver<Schema>::EntityObserver(EntityDatabase<Schema>& entity_database)
+        : database_(database)
+    {
+        database_.add_entity_observer(*this);
+    }
+
+    template<typename Schema>
+    EntityObserver<Schema>::~EntityObserver() {
+        database_.remove_entity_observer(*this);
+    }    
 
 }
