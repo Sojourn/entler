@@ -7,7 +7,9 @@ namespace entler {
 
     using Schema = EntitySchema<
         ComponentType,
-        ComponentType::transform,
+        ComponentType::object_type,
+        ComponentType::property_type,
+        ComponentType::position,
         ComponentType::body,
         ComponentType::display,
         ComponentType::energy

@@ -8,11 +8,14 @@ namespace entler {
 
     class Simulation {
     public:
-        Simulation(size_t width, size_t height);
+        Simulation(size_t width, size_t height)
+            : scene_(database_, width, height)
+        {
+        }
 
     private:
-        Scene                  scene_;
         EntityDatabase<Schema> database_;
+        Scene                  scene_;
     };
 
 }

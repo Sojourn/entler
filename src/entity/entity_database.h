@@ -33,6 +33,11 @@ namespace entler {
         EntityId get_id() const;
 
         template<ComponentType component_type>
+        bool has_component() const;
+        bool has_component(ComponentType component_type) const;
+        bool has_components(typename Schema::ComponentMask component_mask) const;
+
+        template<ComponentType component_type>
         Component<component_type>& get_component();
 
         template<ComponentType component_type>
@@ -51,6 +56,8 @@ namespace entler {
 
     template<typename Schema>
     class EntityHandle {
+        template<typename> friend class EntityDatabase;
+
     public:
         EntityHandle() = default;
         EntityHandle(Entity<Schema>& entity);
@@ -77,8 +84,8 @@ namespace entler {
     public:
         EntityObserver(EntityDatabase<Schema>& entity_database);
 
-        virtual void entity_added(Entity<Schema> entity) = 0;
-        virtual void entity_removed(Entity<Schema> entity) = 0;
+        virtual void entity_added(Entity<Schema> entity) {}
+        virtual void entity_removed(Entity<Schema> entity) {}
 
     protected:
         ~EntityObserver();
@@ -91,6 +98,7 @@ namespace entler {
     class EntityDatabase {
         template<typename> friend class Entity;
         template<typename> friend class EntityHandle;
+        template<typename> friend class EntityObserver;
 
     public:
         using ComponentType = typename Schema::ComponentType;
@@ -114,11 +122,17 @@ namespace entler {
             size_t entity_index = entity_table_.size();
             entity_table_.push_back(record);
 
-            return Entity(*this, entity_index);
+            Entity entity (*this, entity_index);
+            notify_entity_added(entity);
+            return entity;
         }
 
-        void remove_entity(Entity& entity) {
+        void remove_entity(Entity entity) {
             EntityRecord& record = entity_table_[entity.entity_index_];
+            assert(record.entity_id >= 0);
+
+            notify_entity_removed(entity);
+            record.handles.clear();
             record.entity_id = -1;
 
             size_t component_type_index = 0;
@@ -206,6 +220,18 @@ namespace entler {
             }
         }
 
+        void notify_entity_added(Entity entity) {
+            for (EntityObserver<Schema>* observer: entity_observers_) {
+                observer->entity_added(entity);
+            }
+        }
+
+        void notify_entity_removed(Entity entity) {
+            for (EntityObserver<Schema>* observer: entity_observers_) {
+                observer->entity_removed(entity);
+            }
+        }
+
         EntityRecord& get_entity_record(size_t entity_index) {
             assert(entity_index < entity_table_.size());
             return entity_table_[entity_index];
@@ -245,10 +271,10 @@ namespace entler {
         }
 
     private:
-        EntityId                            next_entity_id_;
-        std::vector<EntityRecord>           entity_table_;
-        ComponentTables                     component_tables_;
-        std::vector<EntityObserver<Schema>> entity_observers_;
+        EntityId                             next_entity_id_;
+        std::vector<EntityRecord>            entity_table_;
+        ComponentTables                      component_tables_;
+        std::vector<EntityObserver<Schema>*> entity_observers_;
     };
 
     template<typename Schema>
@@ -258,11 +284,38 @@ namespace entler {
 
     template<typename Schema>
     template<typename Schema::ComponentType component_type>
+    bool Entity<Schema>::has_component() const {
+        static constexpr auto component_type_index = Schema::find_component_type(component_type);
+        static_assert(component_type_index, "Unknown component type");
+
+        const Database::EntityRecord& record = database_.get_entity_record(entity_index_);
+        return record.component_mask.test(*component_type_index);
+    }
+
+    template<typename Schema>
+    bool Entity<Schema>::has_component(ComponentType component_type) const {
+        static constexpr auto component_type_index = Schema::find_component_type(component_type);
+        static_assert(component_type_index, "Unknown component type");
+
+        const Database::EntityRecord& record = database_.get_entity_record(entity_index_);
+        return record.component_mask.test(*component_type_index);
+    }
+
+    template<typename Schema>
+    bool Entity<Schema>::has_components(typename Schema::ComponentMask component_mask) const {
+        const Database::EntityRecord& record = database_.get_entity_record(entity_index_);
+        return (record.component_mask & component_mask) == component_mask;
+    }
+
+    template<typename Schema>
+    template<typename Schema::ComponentType component_type>
     auto Entity<Schema>::get_component() -> Component<component_type>& {
         static constexpr auto component_type_index = Schema::find_component_type(component_type);
         static_assert(component_type_index, "Unknown component type");
 
-        const Database::EntityRecord& record = database_.entity_table_[entity_index_];
+        const Database::EntityRecord& record = database_.get_entity_record(entity_index_);
+        assert(has_component<component_type>());
+
         size_t component_index = record.component_indexes[*component_type_index];
         return std::get<*component_type_index>(database_.component_tables_)[component_index];
     }
@@ -273,14 +326,16 @@ namespace entler {
         static constexpr auto component_type_index = Schema::find_component_type(component_type);
         static_assert(component_type_index, "Unknown component type");
 
-        const Database::EntityRecord& record = database_.entity_table_[entity_index_];
+        const Database::EntityRecord& record = database_.get_entity_record(entity_index_);
+        assert(has_component<component_type>());
+
         size_t component_index = record.component_indexes[*component_type_index];
         return std::get<*component_type_index>(database_.component_tables_)[component_index];
     }
 
     template<typename Schema>
     EntityHandle<Schema>::EntityHandle(Entity<Schema>& entity)
-        : entity_database_(entity.database_)
+        : entity_database_(&entity.database_)
         , entity_index_(entity.entity_index_)
     {
         auto& record = entity_database_->get_entity_record(entity_index_);
@@ -315,14 +370,14 @@ namespace entler {
 
     template<typename Schema>
     EntityObserver<Schema>::EntityObserver(EntityDatabase<Schema>& entity_database)
-        : database_(database)
+        : entity_database_(entity_database)
     {
-        database_.add_entity_observer(*this);
+        entity_database_.add_entity_observer(*this);
     }
 
     template<typename Schema>
     EntityObserver<Schema>::~EntityObserver() {
-        database_.remove_entity_observer(*this);
+        entity_database_.remove_entity_observer(*this);
     }    
 
 }

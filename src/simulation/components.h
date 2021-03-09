@@ -5,21 +5,56 @@
 
 namespace entler {
 
+    enum class ObjectType {
+        robot,
+        rock,
+        ball,
+        block,
+    };
+
+    enum class PropertyType {
+        hole,
+        lava,
+        mud,
+    };
+
     enum class ComponentType {
-        transform,
+        object_type,
+        property_type,
+        position,
+        rotation,
         body,
         display,
         energy,
     };
 
     template<>
-    class Component<ComponentType, ComponentType::transform> {
-        I32Vec3 position;
-        I32Vec3 direction; // normal
+    class Component<ComponentType, ComponentType::object_type> {
+    public:
+        ObjectType type;
+    };
+
+    template<>
+    class Component<ComponentType, ComponentType::property_type> {
+    public:
+        PropertyType type;
+    };
+
+    template<>
+    class Component<ComponentType, ComponentType::position> {
+    public:
+        I32Vec3 value;
+    };
+
+    template<>
+    class Component<ComponentType, ComponentType::rotation> {
+    public:
+        I32Vec3 value;
     };
 
     template<>
     class Component<ComponentType, ComponentType::body> {
+    public:
         I32Vec3 velocity;
         I32Vec3 momentum;
     };
