@@ -1,3 +1,6 @@
 [submodule "libs/behavior_tree"]
 	path = libs/behavior_tree
 	url = https://github.com/Sojourn/behavior_tree
+[submodule "libs/imgui"]
+	path = libs/imgui
+	url = https://github.com/ocornut/imgui
